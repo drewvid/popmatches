@@ -1,4 +1,4 @@
-from popmatches import var_many, var_one, mexp, register_match_procedure
+from popmatches import var_many, var_one, mexp, match_procedure
 
 
 def test_var_one_many():
@@ -36,13 +36,12 @@ def test_mexp():
 
 if __name__ == '__main__':
 
+    @match_procedure
     def one_two(l):
         if l == [1, 2]:
             return "one_two"
         else:
             return False
-
-    register_match_procedure('one_two', one_two)
 
     test_var_one_many()
     test_mexp()

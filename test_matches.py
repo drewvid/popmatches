@@ -1,5 +1,5 @@
 from popmatches import smatches, matches, disable_globals, enable_globals, clear_globals
-from popmatches import var_one, var_many, V, mexp, register_match_procedure
+from popmatches import var_one, var_many, V, mexp, match_procedure
 
 
 def test_smatches():
@@ -141,34 +141,33 @@ def test_V():
 
 if __name__ == '__main__':
 
+    @match_procedure
     def zero(x):
         if x == 0:
             return 'zero'
         else:
             return False
 
+    @match_procedure
     def five(x):
         if x == 5:
             return 'five'
         else:
             return False
 
+    @match_procedure
     def one_two(l):
         if l == [1, 2]:
             return "one_two"
         else:
             return False
 
+    @match_procedure
     def three_four(l):
         if l == [4, 5]:
             return "four_five"
         else:
             return False
-
-    register_match_procedure('zero', zero)
-    register_match_procedure('five', five)
-    register_match_procedure('one_two', one_two)
-    register_match_procedure('three_four', three_four)
 
     test_smatches()
     print()

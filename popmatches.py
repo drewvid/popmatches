@@ -187,8 +187,9 @@ def assign(name, value):
     V[name] = value
 
 
-def register_match_procedure(name, proc):
-    globals()[name] = proc
+def match_procedure(func):
+    globals()[func.__name__] = func
+    return func
 
 
 def eval_bind_one(current_s, current_p, bindings):
