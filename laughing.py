@@ -15,7 +15,7 @@ class FSM(object):
     def exit_from_fsm(self):
         raise Exception('exiting from FSM')
 
-    def _traverse(self, start_node):
+    def traverse_network(self, start_node):
         for arc in self.arcs:
             if matches(arc, [start_node, mexp('?to'), mexp('?symbol')]):
                 if to == self.final:
@@ -23,14 +23,14 @@ class FSM(object):
                     self.finished = True
                     self.exit_from_fsm()
                 elif symbol == '#' and random.random() < 0.8:
-                    self._traverse(to)
+                    self.traverse_network(to)
                 elif symbol != '#':
                     self.output += symbol
-                    self._traverse(to)
+                    self.traverse_network(to)
 
     def traverse(self):
         try:
-            self._traverse(self.initial)
+            self.traverse_network(self.initial)
         except:
             pass
         self.pr()
