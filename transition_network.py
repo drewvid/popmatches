@@ -19,50 +19,47 @@ class FSTN(object):
     def exit_from_fstn(self):
         raise Exception('exiting from FSM')
 
-    def initial_nodes(self, n):
+    def initial_nodes(self):
         global v, A__
-        matches(n, [A__, ['Initial', mexp('??v')], A__])
+        matches(self.network, [A__, ['Initial', mexp('??v')], A__])
         return v
 
-    def final_nodes(self, n):
+    def final_nodes(self):
         global v, A__
-        matches(n, [A__, ['Final', mexp('??v')], A__])
+        matches(self.network, [A__, ['Final', mexp('??v')], A__])
         return v
 
-    def valid_move(self, label, s, network):
+    def valid_move(self, label, s):
         global A__
-        return matches(network, [A__, [label, 'abbreviates', A__, s, A__], A__])
+        return matches(self.abbreviations, [A__, [label, 'abbreviates', A__, s, A__], A__])
 
-    def get_transitions(self, node, network):
+    def get_transitions(self, node):
         global newnode, label
         pattern = ['From', node, 'to', mexp('?newnode'), 'by', mexp('?label')]
-        return [(newnode, label) for entry in network if matches(entry, pattern)]
+        return [(newnode, label) for entry in self.network if matches(entry, pattern)]
 
     def recognise_move(self, label, tape):
-        if tape is not [] and self.valid_move(label, tape[0], self.abbreviations):
+        if tape is not [] and self.valid_move(label, tape[0]):
             self.output.append((label, tape[0]))
             return tape[1:]
         elif label == '#':
             return tape
         return None
 
-    def recognise_next(self, node, tape, network):
-        if tape == [] and node in self.final_nodes(network):
+    def recognise_next(self, node, tape):
+        if tape == [] and node in self.final_nodes():
             self.finished = True
             self.exit_from_fstn()
 
-        for newnode, label  in self.get_transitions(node, network):
+        for newnode, label  in self.get_transitions(node):
             newtape = self.recognise_move(label, tape)
             if newtape is not None:
-                self.recognise_next(newnode, newtape, self.network)
-
-    def _recognise(self, network, tape):
-        for node in self.initial_nodes(self.network):
-            self.recognise_next(node, self.tape, self.network)
+                self.recognise_next(newnode, newtape)
 
     def recognise(self):
         try:
-            self._recognise(self.network, self.tape)
+            for node in self.initial_nodes():
+                self.recognise_next(node, self.tape)
         except:
             pass
         self.pr()
