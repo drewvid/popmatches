@@ -50,11 +50,11 @@ class FSTN(object):
         if tape == [] and node in self.final_nodes():
             self.finished = True
             self.exit_from_fstn()
+        elif tape is None:
+            return
 
         for newnode, label  in self.get_transitions(node):
-            newtape = self.recognise_move(label, tape)
-            if newtape is not None:
-                self.recognise_next(newnode, newtape)
+            self.recognise_next(newnode, self.recognise_move(label, tape))
 
     def recognise(self):
         try:
