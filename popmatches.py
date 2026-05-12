@@ -1,6 +1,9 @@
 import sys
-from collections import OrderedDict
 import re
+import builtins
+from collections import OrderedDict
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, Set
 from pprint import pprint
 
 create_global_variables = True
@@ -14,80 +17,73 @@ match_cache = None
 
 V = OrderedDict()
 
-def match_type(one_or_many, vname, nitems, proc):
+class MatchCount(Enum):
+    ONE = 'one'
+    MANY = 'many'
 
-    if one_or_many == 'many':
-        if(nitems == -1):
-            if vname is None and proc is None:
-                vtype = 'wild_matchmany'
-            elif vname is not None and proc is None:
-                vtype = 'var_matchmany'
-            elif vname is None and proc is not None:
-                vtype = 'wild_proc_matchmany'
-            elif vname is not None and proc is not None:
-                vtype = 'var_proc_matchmany'
-        else:
-            if vname is None and proc is None:
-                vtype = 'wild_n_matchmany'
-            elif vname is not None and proc is None:
-                vtype = 'var_n_matchmany'
-            elif vname is None and proc is not None:
-                vtype = 'wild_proc_n_matchmany'
-            elif vname is not None and proc is not None:
-                vtype = 'var_proc_n_matchmany'
-    else:
-        if vname is None and proc is None:
-            vtype = 'wild_matchone'
-        elif vname is not None and proc is None:
-            vtype = 'var_matchone'
-        elif vname is None and proc is not None:
-            vtype = 'wild_proc_matchone'
-        elif vname is not None and proc is not None:
-            vtype = 'var_proc_matchone'
 
-    return vtype
+def match_type(count: MatchCount, vname: Optional[str], nitems: int, proc: Optional[Callable]) -> str:
+    """Determine the internal type string for a MatchVar."""
+    prefix = "var" if vname else "wild"
+    mid = "_proc" if proc else ""
+    n_part = "_n" if (count == MatchCount.MANY and nitems != -1) else ""
+    suffix = "matchmany" if count == MatchCount.MANY else "matchone"
+    
+    return f"{prefix}{mid}{n_part}_{suffix}"
 
 
 class MatchVar(object):
+    """
+    Represents a variable or wildcard in a pattern.
+    
+    Attributes:
+        count (MatchCount): Whether it matches ONE or MANY items.
+        vname (str): The name of the variable to bind to.
+        vtype (str): The internal type identifier.
+        nitems (int): Exact number of items to match (for MANY matches).
+        proc (callable): A procedural check function.
+    """
 
-    def __init__(self, one_or_many, vname=None, nitems=-1, proc=None):
-        self.one_or_many = one_or_many
+    def __init__(self, count: MatchCount, vname: Optional[str] = None, nitems: int = -1, proc: Optional[Callable] = None):
+        self.count = count
         self.vname = vname
-        self.vtype = match_type(one_or_many, vname, nitems, proc)
+        self.vtype = match_type(count, vname, nitems, proc)
         self.nitems = nitems
-        self.proc  = proc
+        self.proc = proc
 
-    def __str__(self):
-        if self.vname:
-            return self.vname
+    def __str__(self) -> str:
+        return self.vname if self.vname else 'None'
+
+    def __repr__(self) -> str:
+        if self.count == MatchCount.MANY:
+            return f'({self.vname}, {self.proc}, {self.nitems}, {self.vtype})'
         else:
-            return 'None'
-
-    def __repr__(self):
-        if self.one_or_many == "many":
-            return '({0}, {1}, {2}, {3})'.format(self.vname, self.proc, self.nitems, self.vtype)
-        else:
-            return '[{0}, {1}, {2}]'.format(self.vname, self.proc, self.vtype)
+            return f'[{self.vname}, {self.proc}, {self.vtype}]'
 
 
-def ismexp(v):
+def ismexp(v: Any) -> bool:
+    """Check if a value is a MatchVar."""
     return isinstance(v, MatchVar)
 
 
-def ismany(v):
-    return v.one_or_many == 'many'
+def ismany(v: MatchVar) -> bool:
+    """Check if a MatchVar matches many items."""
+    return v.count == MatchCount.MANY
 
 
-def isone(v):
-    return v.one_or_many == 'one'
+def isone(v: MatchVar) -> bool:
+    """Check if a MatchVar matches exactly one item."""
+    return v.count == MatchCount.ONE
 
 
-def var_one(vname=None, proc=None):
-    return MatchVar('one', vname=vname, proc=proc)
+def var_one(vname: Optional[str] = None, proc: Optional[Callable] = None) -> MatchVar:
+    """Create a MatchVar that matches one item."""
+    return MatchVar(MatchCount.ONE, vname=vname, proc=proc)
 
 
-def var_many(vname=None, proc=None, n=-1):
-    return MatchVar('many', vname=vname, nitems=n, proc=proc)
+def var_many(vname: Optional[str] = None, proc: Optional[Callable] = None, n: int = -1) -> MatchVar:
+    """Create a MatchVar that matches many items."""
+    return MatchVar(MatchCount.MANY, vname=vname, nitems=n, proc=proc)
 
 
 U_ = var_one('u')
@@ -100,13 +96,21 @@ A_ = var_one()
 A__ = var_many()
 
 
-def mexp(s):
-
+def mexp(s: str) -> Union[MatchVar, str]:
+    """
+    Parse a shorthand string expression into a MatchVar.
+    
+    Examples:
+        ?X        -> var_one('X')
+        ??Y:5     -> var_many('Y', n=5)
+        ?proc     -> var_one(proc=proc)
+        ==        -> wildcard many
+    """
     vname = None
     proc = None
     n = -1
 
-    m = re.match("(\?\??|==?)([\w]*)?:?([\w]*)?:?([\w]*)?", s)
+    m = re.match(r"(\?\??|==?)([\w]*)?:?([\w]*)?:?([\w]*)?", s)
     if not m:
         return s
     res = m.groups()
@@ -118,12 +122,18 @@ def mexp(s):
         if res[2].isdigit():
             n = int(res[2])
         else:
-            proc = globals()[res[2]]
+            # Look in calling module's globals or popmatches globals
+            proc = globals().get(res[2])
+            if not proc:
+                # Fallback to check builtins if needed, but usually it's in popmatches globals
+                # after being registered by @match_procedure
+                pass
+
     if res[3] != '':
         n = int(res[3])
 
     if '==' in opp or '??' in opp:
-        if vname or proc or n:
+        if vname or proc or n != -1:
             return var_many(vname=vname, proc=proc, n=n)
         else:
             return A__
@@ -132,6 +142,7 @@ def mexp(s):
             return var_one(vname=vname, proc=proc)
         else:
             return A_
+    return s
 
 
 #
@@ -140,60 +151,63 @@ def mexp(s):
 
 
 class SetGlobal:
+    """Helper to inject variables into the global/builtin namespace."""
 
     def __init__(self):
-        try:
-            self.__dict__['builtin'] = sys.modules['__builtin__'].__dict__
-        except KeyError:
-            self.__dict__['builtin'] = sys.modules['builtins'].__dict__
+        self.builtin_dict = builtins.__dict__
 
-    def setattr(self, name, value):
-        self.builtin[name] = value
+    def setattr(self, name: str, value: Any):
+        """Set an attribute in the builtin namespace."""
+        self.builtin_dict[name] = value
 
-    def delattr(self, name):
-        del self.builtin[name]
+    def delattr(self, name: str):
+        """Delete an attribute from the builtin namespace."""
+        if name in self.builtin_dict:
+            del self.builtin_dict[name]
 
 
 sg = SetGlobal()
 
 
 def clear_globals():
-    global sg, defined_global_variables
+    """Clear all variables previously injected into the global namespace."""
+    global defined_global_variables
     for name in defined_global_variables:
         sg.delattr(name)
     defined_global_variables = set()
 
 
 def disable_globals():
-    global create_global_variables, sg, defined_global_variables
+    """Disable automatic global variable injection and clear existing ones."""
+    global create_global_variables, defined_global_variables
     if create_global_variables:
         create_global_variables = False
-        for name in defined_global_variables:
-            sg.delattr(name)
-        defined_global_variables = set()
+        clear_globals()
 
 
 def enable_globals():
-    global create_global_variables, sg
-    if create_global_variables is False:
-        create_global_variables = True
+    """Enable automatic global variable injection."""
+    global create_global_variables
+    create_global_variables = True
 
 
-def assign(name, value):
+def assign(name: str, value: Any):
+    """Assign a value to a variable, potentially injecting it into the global namespace."""
     if create_global_variables:
-        global sg
         sg.setattr(name, value)
         defined_global_variables.add(name)
     V[name] = value
 
 
-def match_procedure(func):
+def match_procedure(func: Callable) -> Callable:
+    """Decorator to register a function as a match procedure."""
     globals()[func.__name__] = func
     return func
 
 
-def eval_bind_one(current_s, current_p, bindings):
-
+def eval_bind_one(current_s: Any, current_p: MatchVar, bindings: Dict[str, Any]) -> bool:
+    """Evaluate and bind a single item match."""
+    valid = False
     if current_p.vtype == 'wild_matchone':
         valid = True
     elif current_p.vtype == 'var_matchone':
@@ -208,14 +222,13 @@ def eval_bind_one(current_s, current_p, bindings):
             assign(current_p.vname, valid)
             bindings[current_p.vname] = valid
     else:
-        print("this should not happen")
-        valid = False
+        raise RuntimeError(f"Unexpected MatchVar vtype in eval_bind_one: {current_p.vtype}")
 
     return bool(valid)
 
 
-def eval_bind_many(current_p, value, bindings):
-
+def eval_bind_many(current_p: MatchVar, value: List[Any], bindings: Dict[str, Any]) -> bool:
+    """Evaluate and bind a multi-item match."""
     valid = True
 
     if current_p.nitems == -1:
@@ -250,12 +263,14 @@ def eval_bind_many(current_p, value, bindings):
     return bool(valid)
 
 
-def gen_cache_index(l1, l2):
+def gen_cache_index(l1: Any, l2: Any) -> str:
+    """Generate a cache key for two objects."""
     return repr(l1) + repr(l2)
 
 
-def get_index(current_p, s_tokens, s_index, p_tokens, p_index):
-
+def get_index(current_p: MatchVar, s_tokens: List[Any], s_index: int, p_tokens: List[Any], p_index: int) -> int:
+    """Find the index where a MANY match should stop."""
+    index = 0
     if (current_p.nitems > 0):
         n = 0
         for index, item in enumerate(s_tokens[s_index:]):
@@ -269,7 +284,8 @@ def get_index(current_p, s_tokens, s_index, p_tokens, p_index):
                 bindings, amatch = new_matches(item, terminator)
                 if amatch:
                     cache_index = gen_cache_index(item, terminator)
-                    match_cache[cache_index] = bindings
+                    if match_cache is not None:
+                        match_cache[cache_index] = bindings
                     break
             elif terminator == item:
                 break
@@ -277,16 +293,14 @@ def get_index(current_p, s_tokens, s_index, p_tokens, p_index):
     return index
 
 
-def new_matches(s_tokens, p_tokens):
-
+def new_matches(s_tokens: List[Any], p_tokens: List[Any]) -> Tuple[Dict[str, Any], bool]:
+    """Recursive core matching logic."""
     bindings = OrderedDict()
-
     amatch = True
     s_index = 0
     p_index = 0
 
     while s_index < len(s_tokens) and p_index < len(p_tokens) and amatch:
-
         current_p = p_tokens[p_index]
         current_s = s_tokens[s_index]
 
@@ -300,51 +314,60 @@ def new_matches(s_tokens, p_tokens):
             else:
                 index = get_index(current_p, s_tokens, s_index, p_tokens, p_index)
                 tokens = s_tokens[s_index:s_index + index]
-            # items = [token[1] for token in tokens]
             items = tokens
             amatch = eval_bind_many(current_p, items, bindings)
             s_index += index
         elif isinstance(current_p, list) and isinstance(current_s, list):
             cache_index = gen_cache_index(current_s, current_p)
-            if cache_index in match_cache:
+            if match_cache is not None and cache_index in match_cache:
                 amatch = True
                 b = match_cache[cache_index]
             else:
                 b, amatch = new_matches(current_s, current_p)
             if amatch:
-                bindings = OrderedDict(**bindings, **b)
+                bindings.update(b)
             s_index += 1
         else:
             amatch = current_p == current_s
             s_index += 1
         p_index += 1
 
-    if (p_index != len(p_tokens) or s_index != len(s_tokens)):
-        if amatch:
+    if amatch and (p_index != len(p_tokens) or s_index != len(s_tokens)):
+        if (len(s_tokens) == s_index and (len(p_tokens) - p_index) == 1):
+            current_p = p_tokens[p_index]
+            if ismexp(current_p) and ismany(current_p):
+                amatch = eval_bind_many(current_p, [], bindings)
+            else:
+                amatch = False
+        else:
             amatch = False
-            if (len(s_tokens) == s_index and (len(p_tokens) - p_index) == 1):
-                current_p = p_tokens[p_index]
-                if ismany(current_p):
-                    amatch = eval_bind_many(current_p, [], bindings)
 
     return bindings, amatch
 
 
-def matches(data, pattern):
+def matches(data: List[Any], pattern: List[Any]) -> Union[Dict[str, Any], bool]:
+    """
+    Match a data list against a pattern list.
+    
+    Returns:
+        - A dictionary of bindings if variables were matched.
+        - True if the pattern matched but no variables were bound.
+        - False if the pattern did not match.
+    """
     global match_cache
     match_cache = OrderedDict()
 
     bindings, amatch = new_matches(data, pattern)
 
-    if amatch and bindings:
-        return bindings
-    elif amatch:
-        return True
-    else:
-        return False
+    if amatch:
+        return bindings if bindings else True
+    return False
 
 
-def smatches(data_in, pattern_in):
+def smatches(data_in: str, pattern_in: str) -> Union[Dict[str, Any], bool]:
+    """
+    Match a space-separated string against a shorthand pattern string.
+    """
     data = data_in.split()
     pattern = [mexp(item) for item in pattern_in.split()]
     return matches(data, pattern)
