@@ -5,8 +5,9 @@ from pprint import pprint
 A__ = mexp("==")
 
 class FSTN(object):
-
-    output = []
+    """
+    Finite State Transition Network using popmatches for pattern matching.
+    """
 
     def __init__(self, name, arcs, abbreviations, tape):
         self.name = name
@@ -15,6 +16,7 @@ class FSTN(object):
         self.abbreviations = abbreviations
         self.tape = tape
         self.finished = False
+        self.output = []
 
     def exit_from_fstn(self):
         raise Exception('exiting from FSM')
@@ -39,29 +41,38 @@ class FSTN(object):
         return [(newnode, label) for entry in self.network if matches(entry, pattern)]
 
     def recognise_move(self, label, tape):
-        if tape is not [] and self.valid_move(label, tape[0]):
-            self.output.append((label, tape[0]))
-            return tape[1:]
-        elif label == '#':
-            return tape
+        """Try to match the current tape item against a transition label. Returns the matched (label, token) pair."""
+        if tape and self.valid_move(label, tape[0]):
+            return (label, tape[0])
         return None
 
-    def recognise_next(self, node, tape):
+    def recognise_next(self, node, tape, history):
         if tape == [] and node in self.final_nodes():
             self.finished = True
+            self.output = history
             self.exit_from_fstn()
         elif tape is None:
             return
 
-        for newnode, label  in self.get_transitions(node):
-            self.recognise_next(newnode, self.recognise_move(label, tape))
+        for newnode, label in self.get_transitions(node):
+            if label == '#':
+                self.recognise_next(newnode, tape, history)
+            else:
+                move = self.recognise_move(label, tape)
+                if move:
+                    self.recognise_next(newnode, tape[1:], history + [move])
 
     def recognise(self):
-        try:
-            for node in self.initial_nodes():
-                self.recognise_next(node, self.tape)
-        except:
-            pass
+        """Start the recognition process from initial nodes."""
+        for node in self.initial_nodes():
+            try:
+                self.recognise_next(node, self.tape, [])
+            except Exception as e:
+                if str(e) == 'exiting from FSM':
+                    # This is the expected termination signal from final nodes
+                    break
+                else:
+                    print(f"Error during recognition: {e}")
         self.pr()
 
     def pr(self):
